@@ -15,11 +15,17 @@
   }
   header h1 { margin: 0; font-size: 22px; }
   header h1 span { color: #C2410C; }
-  #cart-count {
-    background: #C2410C; color: white; border-radius: 999px;
-    padding: 6px 14px; font-weight: 600; font-size: 14px;
+  #cart-btn {
+    background: #C2410C; color: white; border: none; border-radius: 999px;
+    padding: 8px 16px; font-weight: 600; font-size: 14px; cursor: pointer;
   }
   main { max-width: 720px; margin: 0 auto; padding: 24px; }
+  #tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab-btn {
+    background: white; border: 1px solid #D9D3C5; border-radius: 8px;
+    padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; color: #12161C;
+  }
+  .tab-btn.active { background: #12161C; color: white; }
   .card {
     background: white; border: 1px solid #D9D3C5; border-radius: 12px;
     padding: 18px 20px; margin-bottom: 14px;
@@ -32,6 +38,11 @@
     padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
   }
   button:hover { background: #C2410C; }
+  .stepper { display: flex; align-items: center; gap: 12px; }
+  .stepper button {
+    width: 32px; height: 32px; padding: 0; border-radius: 8px; font-size: 16px;
+  }
+  .stepper span { font-weight: 600; min-width: 16px; text-align: center; }
   #checkout-bar {
     position: sticky; bottom: 0; background: #12161C; color: white;
     padding: 16px 24px; display: flex; justify-content: space-between;
@@ -41,60 +52,144 @@
   #status { margin-top: 16px; padding: 14px; border-radius: 8px; font-weight: 600; }
   #status.success { background: #DCFCE7; color: #166534; }
   #status.error { background: #FEE2E2; color: #991B1B; }
+  .cart-line { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #D9D3C5; }
+  .cart-line button { background: #FEE2E2; color: #991B1B; padding: 4px 10px; font-size: 12px; }
+  #cart-total { font-weight: 700; font-size: 18px; margin-top: 12px; text-align: right; }
+  .order-card { background: white; border: 1px solid #D9D3C5; border-radius: 12px; padding: 16px 20px; margin-bottom: 12px; }
+  .order-card .oid { font-family: monospace; color: #C2410C; font-weight: 600; }
+  .empty { color: #4F565E; padding: 20px 0; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Quick<span>Bite</span></h1>
-  <div id="cart-count">Cart: 0</div>
+  <button id="cart-btn" onclick="showTab('cart')">Cart: <span id="cart-count">0</span></button>
 </header>
 
 <main>
-  <div id="menu"></div>
+  <div id="tabs">
+    <button class="tab-btn active" id="tab-menu" onclick="showTab('menu')">Menu</button>
+    <button class="tab-btn" id="tab-cart" onclick="showTab('cart')">View Cart</button>
+    <button class="tab-btn" id="tab-orders" onclick="showTab('orders')">My Orders</button>
+  </div>
 
-  <div id="checkout-bar">
-    <span id="cart-summary">No items yet</span>
-    <button onclick="placeOrder()">Place Order</button>
+  <div id="view-menu"><div id="menu"></div></div>
+
+  <div id="view-cart" style="display:none">
+    <div id="cart-lines"></div>
+    <div id="cart-total"></div>
+    <div id="checkout-bar">
+      <span id="cart-summary">No items yet</span>
+      <button onclick="placeOrder()">Place Order</button>
+    </div>
+  </div>
+
+  <div id="view-orders" style="display:none">
+    <div id="orders-list"></div>
   </div>
 
   <div id="status" style="display:none"></div>
 </main>
 
 <script>
-let cart = {};
+let menuItems = [];
+let cart = {};        // { item_id: quantity }
+let placedOrders = []; // accumulates confirmed order records
+
+function showTab(name) {
+  ['menu', 'cart', 'orders'].forEach(t => {
+    document.getElementById('view-' + t).style.display = (t === name) ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+  });
+  if (name === 'cart') renderCart();
+  if (name === 'orders') renderOrders();
+}
 
 async function loadMenu() {
   try {
     const res = await fetch('/menu');
     if (!res.ok) throw new Error('Menu request failed: ' + res.status);
-    const items = await res.json();
-    const menuDiv = document.getElementById('menu');
-    menuDiv.innerHTML = items.map(item => `
-      <div class="card">
-        <div>
-          <h3>${item.name}</h3>
-          <p>₹${item.price}</p>
-        </div>
-        <button onclick="addToCart(${item.id})">Add to Cart</button>
-      </div>
-    `).join('');
+    menuItems = await res.json();
+    renderMenu();
   } catch (err) {
     document.getElementById('menu').innerHTML =
       `<p style="color:#991B1B">Couldn't load menu: ${err.message}</p>`;
   }
 }
 
-function addToCart(itemId) {
-  cart[itemId] = (cart[itemId] || 0) + 1;
-  updateCartUI();
+function renderMenu() {
+  const menuDiv = document.getElementById('menu');
+  menuDiv.innerHTML = menuItems.map(item => {
+    const qty = cart[item.id] || 0;
+    return `
+      <div class="card">
+        <div>
+          <h3>${item.name}</h3>
+          <p>₹${item.price}</p>
+        </div>
+        ${qty === 0
+          ? `<button onclick="changeQty(${item.id}, 1)">Add to Cart</button>`
+          : `<div class="stepper">
+               <button onclick="changeQty(${item.id}, -1)">−</button>
+               <span>${qty}</span>
+               <button onclick="changeQty(${item.id}, 1)">+</button>
+             </div>`
+        }
+      </div>
+    `;
+  }).join('');
 }
 
-function updateCartUI() {
-  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
-  document.getElementById('cart-count').textContent = `Cart: ${totalItems}`;
+function changeQty(itemId, delta) {
+  const current = cart[itemId] || 0;
+  const next = current + delta;
+  if (next <= 0) {
+    delete cart[itemId];
+  } else {
+    cart[itemId] = next;
+  }
+  updateCartCount();
+  renderMenu();
+  if (document.getElementById('view-cart').style.display !== 'none') renderCart();
+}
+
+function updateCartCount() {
+  const total = Object.values(cart).reduce((a, b) => a + b, 0);
+  document.getElementById('cart-count').textContent = total;
+}
+
+function renderCart() {
+  const linesDiv = document.getElementById('cart-lines');
+  const itemIds = Object.keys(cart);
+
+  if (itemIds.length === 0) {
+    linesDiv.innerHTML = '<p class="empty">Your cart is empty. Go add something from the Menu tab.</p>';
+    document.getElementById('cart-total').textContent = '';
+    document.getElementById('cart-summary').textContent = 'No items yet';
+    return;
+  }
+
+  let grandTotal = 0;
+  linesDiv.innerHTML = itemIds.map(id => {
+    const item = menuItems.find(m => m.id === Number(id));
+    const qty = cart[id];
+    const lineTotal = item.price * qty;
+    grandTotal += lineTotal;
+    return `
+      <div class="cart-line">
+        <span>${item.name} × ${qty}</span>
+        <span>
+          ₹${lineTotal}
+          <button onclick="changeQty(${item.id}, -${qty})">Remove</button>
+        </span>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('cart-total').textContent = `Total: ₹${grandTotal}`;
   document.getElementById('cart-summary').textContent =
-    totalItems === 0 ? 'No items yet' : `${totalItems} item(s) in cart`;
+    `${Object.values(cart).reduce((a,b) => a+b, 0)} item(s) in cart`;
 }
 
 async function placeOrder() {
@@ -113,13 +208,32 @@ async function placeOrder() {
         body: JSON.stringify({ item_id: Number(itemId), quantity: cart[itemId] })
       });
       if (!res.ok) throw new Error('Order failed for item ' + itemId);
+      const data = await res.json();
+      placedOrders.unshift(data); // newest first
     }
-    showStatus('Order placed! Check /orders/1 to see it.', 'success');
+    showStatus('Order placed! Check the "My Orders" tab.', 'success');
     cart = {};
-    updateCartUI();
+    updateCartCount();
+    renderMenu();
+    showTab('orders');
   } catch (err) {
     showStatus('Something went wrong: ' + err.message, 'error');
   }
+}
+
+function renderOrders() {
+  const ordersDiv = document.getElementById('orders-list');
+  if (placedOrders.length === 0) {
+    ordersDiv.innerHTML = '<p class="empty">No orders placed yet.</p>';
+    return;
+  }
+  ordersDiv.innerHTML = placedOrders.map(o => `
+    <div class="order-card">
+      <div class="oid">Order #${o.order_id}</div>
+      <div>${o.item} × ${o.quantity} — ₹${o.total}</div>
+      <div style="color:#4F565E; font-size:13px; margin-top:4px;">Status: ${o.status}</div>
+    </div>
+  `).join('');
 }
 
 function showStatus(msg, type) {
@@ -127,6 +241,7 @@ function showStatus(msg, type) {
   statusDiv.textContent = msg;
   statusDiv.className = type;
   statusDiv.style.display = 'block';
+  setTimeout(() => { statusDiv.style.display = 'none'; }, 4000);
 }
 
 loadMenu();
