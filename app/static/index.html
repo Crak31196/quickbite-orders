@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <title>QuickBite</title>
 <style>
+#chaos-panel {
+  margin-top: 40px; padding: 16px 20px; border: 2px dashed #C2410C;
+  border-radius: 12px; background: #FFF8F0; display: flex;
+  justify-content: space-between; align-items: center;
+}
+#chaos-panel span { font-size: 13px; font-weight: 600; color: #C2410C; }
+#chaos-toggle {
+  background: #DCFCE7; color: #166534; border: none; border-radius: 999px;
+  padding: 8px 18px; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+#chaos-toggle.on { background: #FEE2E2; color: #991B1B; } 
   * { box-sizing: border-box; }
   body {
     margin: 0; font-family: 'Segoe UI', Arial, sans-serif;
@@ -90,13 +101,36 @@
   </div>
 
   <div id="status" style="display:none"></div>
+  <div id="chaos-panel">
+    <span>⚠ INSTRUCTOR PANEL — Database Status</span>
+    <button id="chaos-toggle" onclick="toggleChaos()">System: Healthy</button>
+  </div>
 </main>
 
 <script>
 let menuItems = [];
 let cart = {};        // { item_id: quantity }
 let placedOrders = []; // accumulates confirmed order records
+async function toggleChaos() {
+  const btn = document.getElementById('chaos-toggle');
+  const isCurrentlyOn = btn.classList.contains('on');
+  const newState = isCurrentlyOn ? 'off' : 'on';
 
+  try {
+    const res = await fetch(`/admin/chaos/${newState}`);
+    const data = await res.json();
+
+    if (data.chaos_db_down) {
+      btn.textContent = 'System: DOWN';
+      btn.classList.add('on');
+    } else {
+      btn.textContent = 'System: Healthy';
+      btn.classList.remove('on');
+    }
+  } catch (err) {
+    showStatus('Could not reach admin toggle: ' + err.message, 'error');
+  }
+}
 function showTab(name) {
   ['menu', 'cart', 'orders'].forEach(t => {
     document.getElementById('view-' + t).style.display = (t === name) ? 'block' : 'none';
