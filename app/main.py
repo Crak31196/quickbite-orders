@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title="QuickBite Orders API")
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
 
 # --- Mock data (in-memory, resets when app restarts) ---
 MENU = [
