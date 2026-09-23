@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="QuickBite Orders API")
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
+
 
 # --- Mock data (in-memory, resets when app restarts) ---
 MENU = [
@@ -58,3 +58,5 @@ def get_order(order_id: int):
     if order_id not in ORDERS:
         raise HTTPException(status_code=404, detail="Order not found")
     return ORDERS[order_id]
+# Mount static files LAST, after every route above
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
