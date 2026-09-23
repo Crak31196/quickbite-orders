@@ -62,9 +62,75 @@
 </main>
 
 <script>
-let cart = {}; // { item_id: quantity }
+let cart = {};
 
 async function loadMenu() {
-  const res = await fetch('/menu');
-  const items = await res.json();
-  const
+  try {
+    const res = await fetch('/menu');
+    if (!res.ok) throw new Error('Menu request failed: ' + res.status);
+    const items = await res.json();
+    const menuDiv = document.getElementById('menu');
+    menuDiv.innerHTML = items.map(item => `
+      <div class="card">
+        <div>
+          <h3>${item.name}</h3>
+          <p>₹${item.price}</p>
+        </div>
+        <button onclick="addToCart(${item.id})">Add to Cart</button>
+      </div>
+    `).join('');
+  } catch (err) {
+    document.getElementById('menu').innerHTML =
+      `<p style="color:#991B1B">Couldn't load menu: ${err.message}</p>`;
+  }
+}
+
+function addToCart(itemId) {
+  cart[itemId] = (cart[itemId] || 0) + 1;
+  updateCartUI();
+}
+
+function updateCartUI() {
+  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+  document.getElementById('cart-count').textContent = `Cart: ${totalItems}`;
+  document.getElementById('cart-summary').textContent =
+    totalItems === 0 ? 'No items yet' : `${totalItems} item(s) in cart`;
+}
+
+async function placeOrder() {
+  const itemIds = Object.keys(cart);
+
+  if (itemIds.length === 0) {
+    showStatus('Add something to your cart first.', 'error');
+    return;
+  }
+
+  try {
+    for (const itemId of itemIds) {
+      const res = await fetch('/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: Number(itemId), quantity: cart[itemId] })
+      });
+      if (!res.ok) throw new Error('Order failed for item ' + itemId);
+    }
+    showStatus('Order placed! Check /orders/1 to see it.', 'success');
+    cart = {};
+    updateCartUI();
+  } catch (err) {
+    showStatus('Something went wrong: ' + err.message, 'error');
+  }
+}
+
+function showStatus(msg, type) {
+  const statusDiv = document.getElementById('status');
+  statusDiv.textContent = msg;
+  statusDiv.className = type;
+  statusDiv.style.display = 'block';
+}
+
+loadMenu();
+</script>
+
+</body>
+</html>
