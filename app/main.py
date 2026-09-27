@@ -1,11 +1,11 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import logging
 import time
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
@@ -24,8 +24,10 @@ CHAOS_MODE = {"db_down": False}
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()
+    logger.debug("Request started: %s %s", request.method, request.url.path)
     response = await call_next(request)
     duration = round((time.time() - start) * 1000)
+    logger.debug("Request completed: %s %s status=%s duration_ms=%s", request.method, request.url.path, response.status_code, duration)
     logger.info(f"{request.method} {request.url.path} {response.status_code} ({duration}ms)")
     return response
 
@@ -46,27 +48,54 @@ class OrderRequest(BaseModel):
     quantity: int
 
 
+class UIClick(BaseModel):
+    target: str = Field(min_length=1, max_length=200)
+
+
+class UIStatus(BaseModel):
+    message: str = Field(min_length=1, max_length=300)
+
+
 @app.get("/health")
 def health():
+    logger.debug("Health check requested")
     return {"status": "ok", "service": "quickbite-orders"}
 
 
 @app.get("/menu")
 def get_menu():
+    logger.debug("Menu requested: item_count=%s", len(MENU))
     return MENU
+
+
+@app.post("/ui-events", status_code=204)
+def log_ui_click(click: UIClick):
+    target = " ".join(click.target.split())[:120]
+    logger.debug("UI click: target=%s", target)
+    return Response(status_code=204)
+
+
+@app.post("/ui-events/status", status_code=204)
+def log_ui_status(status: UIStatus):
+    message = " ".join(status.message.split())
+    logger.debug("UI status: %s", message)
+    return Response(status_code=204)
 
 
 @app.post("/orders")
 def create_order(order: OrderRequest):
     global next_order_id
+    logger.debug("Order creation requested: item_id=%s quantity=%s", order.item_id, order.quantity)
 
     # --- Chaos check: simulates a database outage when toggled on ---
     if CHAOS_MODE["db_down"]:
+        logger.debug("Order creation rejected: database outage is enabled")
         logger.error(f"Database connection timed out — order for item_id={order.item_id} failed")
         raise HTTPException(status_code=500, detail="Internal server error: database unavailable")
 
     item = next((m for m in MENU if m["id"] == order.item_id), None)
     if not item:
+        logger.debug("Order creation rejected: item_id=%s was not found", order.item_id)
         raise HTTPException(status_code=404, detail="Menu item not found")
 
     order_id = next_order_id
@@ -79,21 +108,27 @@ def create_order(order: OrderRequest):
         "total": item["price"] * order.quantity,
         "status": "placed",
     }
+    logger.debug("Order created: order_id=%s item_id=%s quantity=%s", order_id, order.item_id, order.quantity)
     logger.info(f"Order placed: order_id={order_id} item={item['name']} qty={order.quantity}")
     return ORDERS[order_id]
 
 
 @app.get("/orders/{order_id}")
 def get_order(order_id: int):
+    logger.debug("Order lookup requested: order_id=%s", order_id)
     if order_id not in ORDERS:
+        logger.debug("Order lookup failed: order_id=%s was not found", order_id)
         raise HTTPException(status_code=404, detail="Order not found")
+    logger.debug("Order lookup succeeded: order_id=%s", order_id)
     return ORDERS[order_id]
 
 
 @app.get("/admin/chaos/{toggle}")
 def toggle_chaos(toggle: str):
     """Instructor-only: flip this to simulate a database outage live."""
+    logger.debug("Chaos mode toggle requested: state=%s", toggle)
     CHAOS_MODE["db_down"] = (toggle == "on")
+    logger.debug("Chaos mode state changed: db_down=%s", CHAOS_MODE["db_down"])
     logger.warning(f"CHAOS MODE {'ENABLED' if CHAOS_MODE['db_down'] else 'DISABLED'} — database failures simulated")
     return {"chaos_db_down": CHAOS_MODE["db_down"]}
 

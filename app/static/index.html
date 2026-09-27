@@ -115,10 +115,12 @@ async function toggleChaos() {
   const btn = document.getElementById('chaos-toggle');
   const isCurrentlyOn = btn.classList.contains('on');
   const newState = isCurrentlyOn ? 'off' : 'on';
+  console.debug('Chaos mode toggle requested:', newState);
 
   try {
     const res = await fetch(`/admin/chaos/${newState}`);
     const data = await res.json();
+    console.debug('Chaos mode toggle completed:', data);
 
     if (data.chaos_db_down) {
       btn.textContent = 'System: DOWN';
@@ -128,10 +130,12 @@ async function toggleChaos() {
       btn.classList.remove('on');
     }
   } catch (err) {
+    console.debug('Chaos mode toggle failed:', err);
     showStatus('Could not reach admin toggle: ' + err.message, 'error');
   }
 }
 function showTab(name) {
+  console.debug('Tab selected:', name);
   ['menu', 'cart', 'orders'].forEach(t => {
     document.getElementById('view-' + t).style.display = (t === name) ? 'block' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
@@ -141,12 +145,15 @@ function showTab(name) {
 }
 
 async function loadMenu() {
+  console.debug('Menu load requested');
   try {
     const res = await fetch('/menu');
     if (!res.ok) throw new Error('Menu request failed: ' + res.status);
     menuItems = await res.json();
+    console.debug('Menu loaded:', menuItems.length, 'items');
     renderMenu();
   } catch (err) {
+    console.debug('Menu load failed:', err);
     document.getElementById('menu').innerHTML =
       `<p style="color:#991B1B">Couldn't load menu: ${err.message}</p>`;
   }
@@ -178,6 +185,7 @@ function renderMenu() {
 function changeQty(itemId, delta) {
   const current = cart[itemId] || 0;
   const next = current + delta;
+  console.debug('Cart quantity changed:', { itemId, previous: current, delta, next: Math.max(0, next) });
   if (next <= 0) {
     delete cart[itemId];
   } else {
@@ -228,8 +236,10 @@ function renderCart() {
 
 async function placeOrder() {
   const itemIds = Object.keys(cart);
+  console.debug('Checkout requested:', { itemCount: itemIds.length });
 
   if (itemIds.length === 0) {
+    console.debug('Checkout stopped by cart validation:', { itemCount: itemIds.length });
     showStatus('Add something to your cart first.', 'error');
     return;
   }
@@ -243,6 +253,7 @@ async function placeOrder() {
       });
       if (!res.ok) throw new Error('Order failed for item ' + itemId);
       const data = await res.json();
+      console.debug('Order placed:', data);
       placedOrders.unshift(data); // newest first
     }
     showStatus('Order placed! Check the "My Orders" tab.', 'success');
@@ -251,6 +262,7 @@ async function placeOrder() {
     renderMenu();
     showTab('orders');
   } catch (err) {
+    console.debug('Checkout failed:', err);
     showStatus('Something went wrong: ' + err.message, 'error');
   }
 }
@@ -275,8 +287,29 @@ function showStatus(msg, type) {
   statusDiv.textContent = msg;
   statusDiv.className = type;
   statusDiv.style.display = 'block';
+  fetch('/ui-events/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg }),
+    keepalive: true
+  }).catch(err => console.error('Failed to log UI status:', err));
   setTimeout(() => { statusDiv.style.display = 'none'; }, 4000);
 }
+
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const tag = target.tagName.toLowerCase();
+  const id = target.id ? `#${target.id}` : '';
+  const classes = Array.from(target.classList).map(name => `.${name}`).join('');
+  fetch('/ui-events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: `${tag}${id}${classes}` }),
+    keepalive: true
+  }).catch(err => console.error('Failed to log UI click:', err));
+}, true);
 
 loadMenu();
 </script>
