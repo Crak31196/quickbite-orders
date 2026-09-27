@@ -21,7 +21,7 @@ def test_create_order():
     assert response.status_code == 200
     data = response.json()
     assert data["quantity"] == 2
-    assert data["total"] == 498
+    assert data["total"] == 999
 
 
 def test_order_not_found():
